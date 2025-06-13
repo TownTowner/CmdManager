@@ -7,6 +7,7 @@ from datetime import datetime as dt
 import os
 import sys
 import threading
+import psutil
 import pystray
 from PIL import Image
 
@@ -604,22 +605,16 @@ def resource_path(relative_path):
 
 
 def check_single_instance():
-    """
-    检查是否已有实例在运行。
-    如果发现已有实例，打印提示信息并退出程序。
-    """
-    if os.name == "nt":
-        # 仅在Windows上检查
-        import win32event
-        import win32api
-        import winerror
-
-        mutex = win32event.CreateMutex(None, False, "CmdManager_Mutex")
-        last_error = win32api.GetLastError()
-
-        if last_error == winerror.ERROR_ALREADY_EXISTS:
-            print("程序已在运行中")
-            sys.exit(1)
+    current_pid = os.getpid()
+    current_name = os.path.basename(sys.argv[0])  # 获取当前脚本名
+    for proc in psutil.process_iter(["name", "exe"]):
+        try:
+            # 精确匹配：进程名相同且非当前进程
+            if proc.info["name"] == current_name and proc.pid != current_pid:
+                print("程序已在运行中")
+                sys.exit(1)
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
 
 
 if __name__ == "__main__":
