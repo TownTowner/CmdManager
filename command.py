@@ -15,10 +15,10 @@ class Command:
         }
 
     @classmethod
-    def from_dict(cls, data):
+    def from_dict(cls, data: dict):
         return cls(
             id=data.get("id"),
             name=data.get("name", ""),
             command=data.get("command", ""),
-            notes=data.get("notes"),
+            notes=data.get("notes", ""),
         )

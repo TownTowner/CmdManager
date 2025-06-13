@@ -31,6 +31,18 @@ class DBService:
         )
         self.conn.commit()
 
+        # 保存成功后，更新命令对象的ID
+        command_obj.id = self.cursor.lastrowid
+
+    def get_command(self, command_id) -> Command:
+        self.cursor.execute(
+            "SELECT id, name, command, notes FROM commands WHERE id=?", (command_id,)
+        )
+        row = self.cursor.fetchone()
+        if row:
+            return Command(id=row[0], name=row[1], command=row[2], notes=row[3])
+        return None
+
     def get_commands(self) -> list[Command]:
         self.cursor.execute("SELECT id, name, command, notes FROM commands")
         return [
@@ -39,10 +51,28 @@ class DBService:
         ]
 
     def update_command(self, command_obj):
+        if not command_obj.id:
+            raise ValueError("命令对象必须有ID才能更新")
+
         self.cursor.execute(
             "UPDATE commands SET name=?, command=?, notes=? WHERE id=?",
             (command_obj.name, command_obj.command, command_obj.notes, command_obj.id),
         )
+        self.conn.commit()
+
+    def update_commands(self, command_objs: list[Command]):
+        try:
+            self.cursor.executemany(
+                "UPDATE commands SET name=?, command=?, notes=? WHERE id=?",
+                [(cmd.name, cmd.command, cmd.notes, cmd.id) for cmd in command_objs],
+            )
+            self.conn.commit()
+        except Exception as e:
+            self.conn.rollback()
+            raise e
+
+    def delete_command(self, command_id):
+        self.cursor.execute("DELETE FROM commands WHERE id=?", (command_id,))
         self.conn.commit()
 
     def delete_commands(self, command_ids):
@@ -67,7 +97,3 @@ class DBService:
     def close(self):
         if self.conn:
             self.conn.close()
-
-    def delete_command(self, command_id):
-        self.cursor.execute("DELETE FROM commands WHERE id=?", (command_id,))
-        self.conn.commit()

@@ -12,6 +12,13 @@ import pystray
 from PIL import Image
 
 
+class TreeviewRowExtra:
+    def __init__(self, id: str, row_id: str) -> None:
+        self.id = id
+        self.row_id = row_id
+        self.is_modified = False
+
+
 class CmdManager:
 
     unchecked_symbol = "□"
@@ -24,6 +31,7 @@ class CmdManager:
     normal_font = ("Microsoft YaHei", 10)
     big_font = ("微软雅黑", 12)
     entry_placeholders = dict()
+    treeviewRowExtras = dict[str, TreeviewRowExtra]()
 
     def __init__(self, root: tk.Tk):
         self.root = root
@@ -345,7 +353,8 @@ class CmdManager:
                     cmd.notes or "",
                     self.unchecked_symbol,
                 )
-                self.cmd_tree.insert("", tk.END, values=vals)
+                row_id = self.cmd_tree.insert("", tk.END, values=vals)
+                self.treeviewRowExtras[cmd.id] = TreeviewRowExtra(cmd.id, row_id)
 
         except Exception as e:
             messagebox.showerror("加载错误", f"无法加载命令: {str(e)}")
@@ -355,12 +364,6 @@ class CmdManager:
     def edit_command(self, item):
         """编辑命令"""
         try:
-            # item_id = (
-            #     self.cmd_tree.item(item, "tags")[0]
-            #     if self.cmd_tree.item(item, "tags")
-            #     else ""
-            # )
-
             item_values = self.cmd_tree.item(item, "values")
             print(f"原始值: {item_values}")  # 调试信息
 
@@ -384,16 +387,26 @@ class CmdManager:
             name = self.name_entry.get().strip(self.name_placeholder)
             command = self.cmd_entry.get().strip(self.cmd_placeholder)
             remark = self.remark_entry.get().strip(self.remark_placeholder)
-
+            # TODO
             if not name or not command:
                 messagebox.showwarning("警告", "名称和命令不能为空")
                 return
 
+            modified_items = [
+                (v.row_id, v.id)
+                for _, v in self.treeviewRowExtras.values()
+                if v.is_modified
+            ]
+            all_values = [
+                self.cmd_tree.item(row_id, "values") for row_id, _ in modified_items
+            ]
+            # TODO
             itemid = self.id_var.get()
             if itemid:  # 更新已有命令
                 self.db_service.update_command(Command(name, command, remark, itemid))
             else:  # 新增命令
                 self.db_service.save_command(Command(name, command, remark))
+
             self.load_commands()
 
             # 清空输入框
@@ -497,13 +510,13 @@ class CmdManager:
         # 如果是点击了checkbox列
         if column == "#1":
             values = list(self.cmd_tree.item(item, "values"))
-            val = checked_symbol
+            val = self.checked_symbol
             # print(f"当前值: {current_value}")
             if values[4] == unchecked_symbol:
                 tags = ("selected",)
             else:
                 tags = ()
-                val = unchecked_symbol
+                val = self.unchecked_symbol
                 self.cmd_tree.selection_remove(item)
 
             values[4] = val
@@ -521,14 +534,52 @@ class CmdManager:
             return "break"
 
     def on_treeview_double_click(self, event):
-        """处理treeview双击事件，执行命令"""
-        item = self.cmd_tree.identify_row(event.y)
-        if not item:
+        region = self.cmd_tree.identify_region(event.x, event.y)  # 判断点击区域
+        if region != "cell":
+            return  # 仅响应单元格双击
+
+        column = self.cmd_tree.identify_column(event.x)  # 获取列ID（如 '#1'）
+        if column == "#1":
             return
 
-        values = self.cmd_tree.item(item, "values")
-        if len(values) > 2 and values[2]:  # 确保有命令内容
-            self.run(values[2])
+        row_id = self.cmd_tree.focus()  # 获取当前选中行ID
+        print(row_id, column)
+        column_index = int(column[1:]) - 1  # 列索引（0开始）
+
+        # 获取单元格原始值
+        values = self.cmd_tree.item(row_id, "values")
+        old_value = values[column_index]
+
+        # 创建临时Entry控件
+        entry_edit = ttk.Entry(self.cmd_tree)
+        entry_edit.insert(0, old_value)
+        entry_edit.select_range(0, tk.END)  # 全选文本
+
+        # 定位Entry到单元格位置
+        x, y, width, height = self.cmd_tree.bbox(row_id, column)
+        entry_edit.place(x=x, y=y, width=width, height=height)
+
+        # 绑定保存和取消事件
+        entry_edit.bind(
+            "<Return>",
+            lambda e: self.save_tree_view_edit(row_id, column_index, entry_edit),
+        )
+        entry_edit.bind(
+            "<FocusOut>",
+            lambda e: self.save_tree_view_edit(row_id, column_index, entry_edit),
+        )
+        entry_edit.bind("<Escape>", lambda e: entry_edit.destroy())
+        entry_edit.focus_set()
+
+    def save_tree_view_edit(self, row_id, column_index, entry):
+        """保存编辑后的内容到Treeview"""
+        new_value = entry.get()
+        # TODO check the new_value is the same as old_value
+        values = list(self.cmd_tree.item(row_id, "values"))  # 转为可变列表
+        values[column_index] = new_value
+        self.cmd_tree.item(row_id, values=values)  # 更新数据
+        # TODO update treeviewRowExtra dict
+        entry.destroy()  # 销毁临时Entry
 
     def on_cmd_edit(self, event):
         """双击编辑命令"""
