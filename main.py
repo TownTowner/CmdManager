@@ -1,4 +1,5 @@
 from contextlib import nullcontext
+import select
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import subprocess
@@ -9,16 +10,16 @@ from datetime import datetime as dt
 import os
 import sys
 import threading
-import psutil
 import pystray
 from PIL import Image
 
 
 class TreeviewRowExtra:
-    def __init__(self, id: str, row_id: str) -> None:
+    def __init__(self, id: str, row_id: str, cmd: Command) -> None:
         self.id = id
         self.row_id = row_id
         self.is_modified = False
+        self.cmd = cmd
 
 
 class CmdManager:
@@ -50,9 +51,6 @@ class CmdManager:
         self.root.protocol("WM_DELETE_WINDOW", self.on_minimize)
         # 这会同时影响窗口标题栏和任务栏图标
         self.root.iconbitmap(resource_path("app.ico"))
-
-        # 创建系统托盘图标
-        self.create_tray_icon()
 
         # 创建主框架
         self.main_frame = ttk.Frame(root, padding="10")
@@ -247,6 +245,9 @@ class CmdManager:
         # 加载已存储命令
         self.load_commands()
 
+        # 创建系统托盘图标
+        self.create_tray_icon()
+
     # 弃用
     def set_widget_ui(self):
         def get_all_children(widget):
@@ -286,6 +287,10 @@ class CmdManager:
         ico = Image.open(resource_path("app.ico"))
         menu = pystray.Menu(
             pystray.MenuItem("显示窗口", self.show_window, default=True),
+            pystray.MenuItem(
+                "命令",
+                pystray.Menu(self.show_cmds_submenu),
+            ),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("退出", self.quit_app),
         )
@@ -302,6 +307,18 @@ class CmdManager:
             self.root.lift()
 
         self.root.after(0, lambda: _show())
+
+    def show_cmds_submenu(self):
+        menu_items = []
+        for e in self.treeviewRowExtras.values():
+            c = str(e.cmd.command)
+            mi = pystray.MenuItem(
+                e.cmd.name,
+                lambda *args, cmd=c: self.run(cmd),
+            )
+            menu_items.append(mi)
+
+        return menu_items
 
     def quit_app(self, icon):
         # 使用线程安全方式停止托盘图标
@@ -358,7 +375,10 @@ class CmdManager:
                     self.unchecked_symbol,
                 )
                 row_id = self.cmd_tree.insert("", tk.END, values=vals)
-                self.treeviewRowExtras[cmd.id] = TreeviewRowExtra(cmd.id, row_id)
+                self.treeviewRowExtras[cmd.id] = TreeviewRowExtra(cmd.id, row_id, cmd)
+
+            if hasattr(self, "tray_icon") and self.tray_icon:
+                self.tray_icon.update_menu()
 
         except Exception as e:
             messagebox.showerror("加载错误", f"无法加载命令: {str(e)}")
