@@ -342,6 +342,8 @@ class CmdManager:
         try:
             commands = self.db_service.get_commands()
             self.cmd_tree.delete(*self.cmd_tree.get_children())
+            self.treeviewRowExtras.clear()
+
             if not commands:
                 vals = ("", "没有存储的命令", "", "", self.unchecked_symbol)
                 self.cmd_tree.insert("", tk.END, values=vals)
@@ -386,36 +388,47 @@ class CmdManager:
     def save_command(self):
         """保存当前命令"""
         try:
+            update_items = []
+            for extra in self.treeviewRowExtras.values():
+                if not extra.is_modified:
+                    continue
+
+                values = self.cmd_tree.item(extra.row_id, "values")
+                cmd = Command(values[1], values[2], values[3], id=extra.id)
+                update_items.append(cmd)
+
             name = self.name_entry.get().strip(self.name_placeholder)
             command = self.cmd_entry.get().strip(self.cmd_placeholder)
             remark = self.remark_entry.get().strip(self.remark_placeholder)
-            # TODO
-            if not name or not command:
+
+            if len(update_items) == 0 and (not name or not command):
                 messagebox.showwarning("警告", "名称和命令不能为空")
                 return
 
-            modified_items = [
-                (v.row_id, v.id)
-                for _, v in self.treeviewRowExtras.values()
-                if v.is_modified
-            ]
-            all_values = [
-                self.cmd_tree.item(row_id, "values") for row_id, _ in modified_items
-            ]
-            # TODO
             itemid = self.id_var.get()
-            if itemid:  # 更新已有命令
-                self.db_service.update_command(Command(name, command, remark, itemid))
-            else:  # 新增命令
+            did_save_item = False
+            if itemid:
+                # 避免输入框与treeview行重复
+                if itemid not in self.treeviewRowExtras:
+                    update_items.append(Command(name, command, remark, itemid))
+            elif name and command:
                 self.db_service.save_command(Command(name, command, remark))
+                did_save_item = True
 
-            self.load_commands()
+            did_update_item = False
+            if len(update_items) > 0:
+                self.db_service.update_commands(update_items)
+                did_update_item = True
 
-            # 清空输入框
-            self.name_entry.delete(0, tk.END)
-            self.cmd_entry.delete(0, tk.END)
-            self.remark_entry.delete(0, tk.END)
-            self.id_var.set("")
+            if did_save_item or did_update_item:
+                self.load_commands()
+
+            if did_save_item:
+                # 清空输入框
+                self.name_entry.delete(0, tk.END)
+                self.cmd_entry.delete(0, tk.END)
+                self.remark_entry.delete(0, tk.END)
+                self.id_var.set("")
 
         except Exception as e:
             messagebox.showerror("错误", f"保存命令失败: {str(e)}")
@@ -505,15 +518,12 @@ class CmdManager:
         """处理treeview点击事件，包括checkbox和编辑"""
         item = self.cmd_tree.identify_row(event.y)
         column = self.cmd_tree.identify_column(event.x)
-        # print(item, column)
-        # print(f"selected:{item in self.cmd_tree.selection()}")  # 第二次点击当前行
 
         tags = None
         # 如果是点击了checkbox列
         if column == "#1":
             values = list(self.cmd_tree.item(item, "values"))
             val = self.checked_symbol
-            # print(f"当前值: {current_value}")
             if values[4] == unchecked_symbol:
                 tags = ("selected",)
             else:
@@ -522,14 +532,8 @@ class CmdManager:
                 self.cmd_tree.selection_remove(item)
 
             values[4] = val
-            # print(f"after:{val = },{bg_color = },{fore_color = },{tags = }")
             self.cmd_tree.item(item, values=values, tags=(tags))
 
-        # 获取cmd_tree的所有行的tags
-        # all_tags = [self.cmd_tree.item(item, "tags") for item in self.cmd_tree.get_children()]
-        # print(f"{all_tags = }")
-        # all_values = [self.cmd_tree.item(item, "values") for item in self.cmd_tree.get_children()]
-        # print(f"{all_values = }")
         self.on_cmd_edit(event)
         if tags and tags.count("selected") == 0:
             # 阻止后续默认处理
@@ -545,7 +549,6 @@ class CmdManager:
             return
 
         row_id = self.cmd_tree.focus()  # 获取当前选中行ID
-        print(row_id, column)
         column_index = int(column[1:]) - 1  # 列索引（0开始）
 
         # 获取单元格原始值
@@ -575,13 +578,18 @@ class CmdManager:
 
     def save_tree_view_edit(self, row_id, column_index, entry):
         """保存编辑后的内容到Treeview"""
+
         new_value = entry.get()
-        # TODO check the new_value is the same as old_value
-        values = list(self.cmd_tree.item(row_id, "values"))  # 转为可变列表
-        values[column_index] = new_value
-        self.cmd_tree.item(row_id, values=values)  # 更新数据
-        # TODO update treeviewRowExtra dict
+        values = self.cmd_tree.item(row_id, "values")
+        item_id = values[0]
+        if new_value != values[column_index]:
+            values = list(values)
+            values[column_index] = new_value
+            self.cmd_tree.item(row_id, values=values)  # 更新数据
+
         entry.destroy()  # 销毁临时Entry
+        if extra := self.treeviewRowExtras.get(item_id):
+            extra.is_modified = False
 
     def on_cmd_edit(self, event):
         """双击编辑命令"""
@@ -662,36 +670,6 @@ def check_single_instance(lock_file_path):
         return sgw.SingletonGuardWin(lock_file_path)
 
     return nullcontext()
-
-    # pyinstaller 打包会开启一个守护进程，导致ppid是守护进程的pid
-    current_pid = os.getpid()
-    current_ppid = os.getppid()
-    current_name = (
-        psutil.Process().name()
-    )  # os.path.basename(sys.argv[0])  # 获取当前脚本名
-    pros = list(psutil.process_iter(["name", "exe"]))
-    same_names = [
-        (proc.pid, proc.ppid()) for proc in pros if proc.info["name"] == current_name
-    ]
-    messagebox.showinfo(
-        "当前进程信息",
-        f"{current_pid}:{current_name},{current_pid = },{current_ppid = },{len(pros) = },{same_names = }",
-    )
-
-    for proc in pros:
-        try:
-            # 精确匹配：进程名相同且非当前进程
-            if (
-                proc.info["name"] == current_name
-                and proc.pid != current_pid
-                and proc.ppid() != current_ppid
-            ):
-                messagebox.showerror(
-                    "程序已在运行中", f"进程ID: {proc.pid},{proc.name}"
-                )
-                sys.exit(1)
-        except (psutil.NoSuchProcess, psutil.AccessDenied):
-            continue
 
 
 if __name__ == "__main__":
