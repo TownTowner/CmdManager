@@ -3,5 +3,5 @@ pyinstaller --clean --onefile --windowed `
     --upx-dir="D:/Programs/upx-5.0.1-win64" `
     --add-data="app.ico;." `
     --icon="app.ico" `
-    --name=CmdManager.exe `
+    --name=CmdManager `
     main.py

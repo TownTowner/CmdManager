@@ -1,8 +1,10 @@
+from contextlib import nullcontext
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import subprocess
 from dbservice import DBService
 from command import Command
+import SingletonGuardWin as sgw
 from datetime import datetime as dt
 import os
 import sys
@@ -28,7 +30,7 @@ class CmdManager:
     unchecked_bg_color = checked_fore_color
     unchecked_fore_color = "#000000"
     # 定义字体
-    normal_font = ("Microsoft YaHei", 10)
+    normal_font = ("微软雅黑", 10)
     big_font = ("微软雅黑", 12)
     entry_placeholders = dict()
     treeviewRowExtras = dict[str, TreeviewRowExtra]()
@@ -655,21 +657,45 @@ def resource_path(relative_path):
     return os.path.join(base_path, relative_path)
 
 
-def check_single_instance():
+def check_single_instance(lock_file_path):
+    if os.name == "nt":
+        return sgw.SingletonGuardWin(lock_file_path)
+
+    return nullcontext()
+
+    # pyinstaller 打包会开启一个守护进程，导致ppid是守护进程的pid
     current_pid = os.getpid()
-    current_name = os.path.basename(sys.argv[0])  # 获取当前脚本名
-    for proc in psutil.process_iter(["name", "exe"]):
+    current_ppid = os.getppid()
+    current_name = (
+        psutil.Process().name()
+    )  # os.path.basename(sys.argv[0])  # 获取当前脚本名
+    pros = list(psutil.process_iter(["name", "exe"]))
+    same_names = [
+        (proc.pid, proc.ppid()) for proc in pros if proc.info["name"] == current_name
+    ]
+    messagebox.showinfo(
+        "当前进程信息",
+        f"{current_pid}:{current_name},{current_pid = },{current_ppid = },{len(pros) = },{same_names = }",
+    )
+
+    for proc in pros:
         try:
             # 精确匹配：进程名相同且非当前进程
-            if proc.info["name"] == current_name and proc.pid != current_pid:
-                print("程序已在运行中")
+            if (
+                proc.info["name"] == current_name
+                and proc.pid != current_pid
+                and proc.ppid() != current_ppid
+            ):
+                messagebox.showerror(
+                    "程序已在运行中", f"进程ID: {proc.pid},{proc.name}"
+                )
                 sys.exit(1)
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             continue
 
 
 if __name__ == "__main__":
-    check_single_instance()
-    root = tk.Tk()
-    app = CmdManager(root)
-    root.mainloop()
+    with check_single_instance("CmdManager.lock"):
+        root = tk.Tk()
+        app = CmdManager(root)
+        root.mainloop()

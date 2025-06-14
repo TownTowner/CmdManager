@@ -4,5 +4,5 @@ pyinstaller --clean --onefile --windowed \
     --hidden-import=win32timezone \
     --add-data="app.ico;." \
     --icon=app.ico \
-    --name=CmdManager.exe \
+    --name=CmdManager \
     main.py

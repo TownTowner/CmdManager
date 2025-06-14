@@ -12,3 +12,4 @@ wheels/
 # custom
 *.db*
 *.spec
+*.lock
