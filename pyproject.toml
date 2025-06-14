@@ -7,6 +7,6 @@ requires-python = ">=3.12"
 dependencies = [
     "pillow>=11.2.1",
     "psutil>=7.0.0",
- "pystray>=0.19.5",
- "pywin32>=310",
+    "pystray>=0.19.5",
+    "pywin32>=310",
 ]

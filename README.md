@@ -8,3 +8,5 @@ uv run config/build.sh  # Linux/macOS
 - 打包脚本在 `config` 目录下，分别为 `build.sh` 和 `build.ps1`
 - 打包后的文件在 `dist` 目录下
 - 打包后的文件为 `exe` 文件，需要在 Windows 系统下运行
+
+在 **Trae(Deepseek)**, **元宝(Deepseek)** 协助下使用 **tkinter**, **pystray**, **sqlite** 开发本项目。

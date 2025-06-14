@@ -1,5 +1,4 @@
 from contextlib import nullcontext
-import select
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import subprocess
