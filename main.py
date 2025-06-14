@@ -585,11 +585,11 @@ class CmdManager:
         if new_value != values[column_index]:
             values = list(values)
             values[column_index] = new_value
-            self.cmd_tree.item(row_id, values=values)  # 更新数据
+            self.cmd_tree.item(row_id, values=values)
+            if extra := self.treeviewRowExtras.get(item_id):
+                extra.is_modified = True
 
         entry.destroy()  # 销毁临时Entry
-        if extra := self.treeviewRowExtras.get(item_id):
-            extra.is_modified = False
 
     def on_cmd_edit(self, event):
         """双击编辑命令"""
